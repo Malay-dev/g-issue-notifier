@@ -1,0 +1,21 @@
+# Cloudflare / Wrangler
+.wrangler/
+.dev.vars
+
+# Node
+node_modules/
+npm-debug.log*
+
+# TypeScript
+dist/
+*.js.map
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo

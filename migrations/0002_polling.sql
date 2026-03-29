@@ -1,0 +1,2 @@
+ALTER TABLE subscriptions ADD COLUMN poll_interval INTEGER DEFAULT 10;
+ALTER TABLE subscriptions ADD COLUMN last_checked_at DATETIME DEFAULT CURRENT_TIMESTAMP;

@@ -1,0 +1,22 @@
+name = "g-issue-notifier-poller"
+main = "github-poller.js"
+compatibility_date = "2026-01-01"
+
+[vars]
+MULTI_TENANT = "false"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[d1_databases]]
+binding       = "DB"
+database_name = "issuebot-db"
+database_id   = "4535d580-c563-4488-974c-8c6e6c72323c"
+
+[[kv_namespaces]]
+binding = "CLAIM_CTX"
+id      = "620c003968dd4fed9f873197c4063ada"
+
+[[queues.producers]]
+binding = "QUEUE"
+queue   = "issue-notifs"

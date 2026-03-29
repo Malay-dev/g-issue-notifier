@@ -1,0 +1,26 @@
+name = "g-issue-notifier-bot"
+main = "src/workers/bot-handler.js"
+compatibility_date = "2026-01-01"
+
+workers_dev = true
+preview_urls = false
+
+[vars]
+MULTI_TENANT = "false"
+
+[[d1_databases]]
+binding       = "DB"
+database_name = "issuebot-db"
+database_id   = "4535d580-c563-4488-974c-8c6e6c72323c"
+
+[[kv_namespaces]]
+binding = "SESSION"
+id      = "f2ffee5bd7f9415b9eb6d21317572284"
+
+[[kv_namespaces]]
+binding = "CLAIM_CTX"
+id      = "620c003968dd4fed9f873197c4063ada"
+
+[[queues.producers]]
+binding = "QUEUE"
+queue   = "issue-notifs"

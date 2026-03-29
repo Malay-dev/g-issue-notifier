@@ -1,0 +1,38 @@
+{
+  "name": "g-issue-notifier",
+  "version": "1.0.0",
+  "description": "A serverless Telegram bot that monitors GitHub repositories for new issues and delivers instant notifications with one-tap claim flow — built on Cloudflare Workers, D1, Queues, and KV.",
+  "keywords": [
+    "telegram bot",
+    "github issues",
+    "cloudflare workers",
+    "serverless",
+    "notifications",
+    "issue tracking",
+    "cloudflare-d1",
+    "cloudflare-queues",
+    "cloudflare-kv"
+  ],
+  "author": "Malay-dev",
+  "private": true,
+  "dependencies": {
+    "wrangler": "^4.76.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "dev:bot": "wrangler dev src/workers/bot-handler.ts --compatibility-date 2026-01-01",
+    "dev:poller": "wrangler dev --config src/workers/poller.toml",
+    "dev:dispatcher": "wrangler dev --config src/workers/dispatcher.toml",
+    "deploy:bot": "wrangler deploy src/workers/bot-handler.ts --name g-issue-notifier-bot --compatibility-date 2026-01-01",
+    "deploy:poller": "wrangler deploy --config src/workers/poller.toml",
+    "deploy:dispatcher": "wrangler deploy --config src/workers/dispatcher.toml",
+    "deploy:all": "npm run deploy:bot && npm run deploy:poller && npm run deploy:dispatcher",
+    "db:migrate:remote": "wrangler d1 migrations apply issuebot-db --remote",
+    "db:migrate:local": "wrangler d1 migrations apply issuebot-db",
+    "tail:bot": "wrangler tail g-issue-notifier-bot",
+    "tail:poller": "wrangler tail g-issue-notifier-poller",
+    "tail:dispatcher": "wrangler tail g-issue-notifier-dispatcher",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "ISC"
+}
