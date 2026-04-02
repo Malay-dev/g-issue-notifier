@@ -7,6 +7,7 @@ preview_urls = false
 
 [vars]
 MULTI_TENANT = "false"
+LOG_LEVEL    = "debug"
 
 [[d1_databases]]
 binding       = "DB"

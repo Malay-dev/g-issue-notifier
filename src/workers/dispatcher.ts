@@ -1,5 +1,6 @@
 import { Env, IssueQueueMessage } from "../types/index.js";
 import { sendMessage, buildIssueMessage } from "../lib/telegram.js";
+import { Logger, LoggerLike } from "../lib/logger.js";
 
 export default {
   async fetch(_request: Request, _env: Env): Promise<Response> {
@@ -8,20 +9,21 @@ export default {
   },
 
   async queue(batch: MessageBatch<IssueQueueMessage>, env: Env): Promise<void> {
-    console.log(
-      `[dispatcher] Processing batch with ${batch.messages.length} messages`,
-    );
+    const logger = new Logger("dispatcher", env.LOG_LEVEL ?? "info");
+    logger.info("Processing batch", { messageCount: batch.messages.length });
+
     for (const message of batch.messages) {
+      const messageLogger = logger.child({ repo: message.body.repo });
       try {
-        console.log(
-          `[dispatcher] Processing message, repo: ${message.body.repo}`,
-        );
-        await handleIssueEvent(message.body, env);
-        console.log(`[dispatcher] Message acknowledged`);
+        messageLogger.info("Processing message", {
+          action: message.body.action,
+        });
+        await handleIssueEvent(message.body, env, messageLogger);
+        messageLogger.info("Message acknowledged");
         message.ack(); // confirm processed
       } catch (err) {
-        console.error("[dispatcher] Dispatcher error:", err);
-        console.log(`[dispatcher] Retrying message`);
+        logger.error("Dispatcher error", { error: err });
+        logger.info("Retrying message");
         message.retry(); // put back in queue
       }
     }
@@ -39,11 +41,15 @@ type Recipient = {
 async function handleIssueEvent(
   event: IssueQueueMessage,
   env: Env,
+  logger: LoggerLike,
 ): Promise<void> {
   const { repo, issue, action, triggerLabel } = event;
-  console.log(
-    `[handleIssueEvent] Processing ${action} for ${repo}#${issue.number} by @${issue.user.login}`,
-  );
+  logger.info("Processing issue event", {
+    action,
+    repo,
+    issue_number: issue.number,
+    author: issue.user.login,
+  });
 
   // ── Find all active subscriptions for this repo ───────────────
   const subs = await env.DB.prepare(
@@ -58,18 +64,17 @@ async function handleIssueEvent(
   )
     .bind(repo)
     .all();
-  console.log(
-    `[handleIssueEvent] Found ${subs.results?.length || 0} active subscriptions for ${repo}`,
-  );
+  logger.info("Found active subscriptions", {
+    repo,
+    count: subs.results?.length || 0,
+  });
 
   // ── In single tenant mode there are no users rows ─────────────
   // ── so we manually resolve the one owner ─────────────────────
   let recipients: Recipient[] = [];
 
   if (env.MULTI_TENANT === "false") {
-    console.log(
-      `[handleIssueEvent] Single tenant mode, checking owner subscription`,
-    );
+    logger.info("Single tenant mode, checking owner subscription", { repo });
     // Check if owner has a subscription for this repo
     const ownerSub = (await env.DB.prepare(
       `
@@ -81,12 +86,10 @@ async function handleIssueEvent(
       .first()) as { id: string } | undefined;
 
     if (!ownerSub) {
-      console.log(
-        `[handleIssueEvent] Owner not subscribed to ${repo}, skipping`,
-      );
+      logger.info("Owner not subscribed, skipping", { repo });
       return;
     } // owner not subscribed to this repo
-    console.log(`[handleIssueEvent] Owner subscription found`);
+    logger.info("Owner subscription found", { repo });
 
     recipients = [
       {
@@ -122,9 +125,11 @@ async function handleIssueEvent(
 
   // ── For each recipient, check label filters then notify ───────
   for (const recipient of recipients) {
-    console.log(
-      `[handleIssueEvent] Checking label filter for user ${recipient.user_id}`,
-    );
+    const recipientLogger = logger.child({
+      user_id: recipient.user_id,
+      sub_id: recipient.sub_id,
+    });
+    recipientLogger.info("Checking label filter");
     const shouldNotify = await checkLabelFilter(
       env,
       recipient.sub_id,
@@ -133,12 +138,10 @@ async function handleIssueEvent(
     );
 
     if (!shouldNotify) {
-      console.log(
-        `[handleIssueEvent] Label filter failed for user ${recipient.user_id}, skipping`,
-      );
+      recipientLogger.info("Label filter failed, skipping", { triggerLabel });
       continue;
     }
-    console.log(`[handleIssueEvent] Notifying user ${recipient.user_id}`);
+    recipientLogger.info("Notifying user");
 
     // ── Format and send Telegram message ─────────────────────────
     const watchingLabels = await getWatchingLabels(env, recipient.sub_id);

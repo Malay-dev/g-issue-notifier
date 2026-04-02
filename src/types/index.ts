@@ -23,6 +23,8 @@ export interface Env {
 
   // Vars
   MULTI_TENANT: "true" | "false";
+
+  LOG_LEVEL?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────

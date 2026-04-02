@@ -8,35 +8,42 @@ import { isAuthorized, resolveUser } from "../lib/resolveUser.js";
 import { sendMessage, answerCallbackQuery } from "../lib/telegram.js";
 import { postComment } from "../lib/github.js";
 import { generateId } from "../lib/utils.js";
+import { Logger, LoggerLike } from "../lib/logger.js";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    console.log(`[bot-handler] Incoming ${request.method} request`);
+    const logger = new Logger("bot-handler", env.LOG_LEVEL ?? "info");
+    logger.info("Incoming request", { method: request.method });
     if (request.method !== "POST") {
-      console.log(`[bot-handler] Non-POST request, returning OK`);
+      logger.info("Non-POST request, returning OK");
       return new Response("OK", { status: 200 });
     }
 
     const update = (await request.json()) as TelegramUpdate;
-    console.log(
-      `[bot-handler] Received update, type: ${update.message ? "message" : update.callback_query ? "callback_query" : "unknown"}`,
-    );
+    logger.info("Received update", {
+      type: update.message
+        ? "message"
+        : update.callback_query
+          ? "callback_query"
+          : "unknown",
+    });
 
     // ── Route to correct handler ──────────────────────────────────
     if (update.message) {
-      console.log(
-        `[bot-handler] Routing to handleMessage, chat_id: ${update.message.chat.id}`,
-      );
-      return handleMessage(update.message, env);
+      logger.info("Routing to handleMessage", {
+        chat_id: update.message.chat.id,
+      });
+      return handleMessage(update.message, env, logger);
     }
 
     if (update.callback_query) {
-      console.log(
-        `[bot-handler] Routing to handleCallback, data: ${update.callback_query.data}`,
-      );
-      return handleCallback(update.callback_query, env);
+      logger.info("Routing to handleCallback", {
+        data: update.callback_query.data,
+      });
+      return handleCallback(update.callback_query, env, logger);
     }
-    console.log(`[bot-handler] Unknown update type, returning OK`);
+
+    logger.info("Unknown update type, returning OK");
 
     return new Response("OK", { status: 200 });
   },
@@ -48,19 +55,21 @@ export default {
 async function handleMessage(
   message: TelegramMessage,
   env: Env,
+  logger: LoggerLike,
 ): Promise<Response> {
   const chat_id = message.chat.id;
   const text = message.text || "";
-  console.log(
-    `[handleMessage] Processing message from chat ${chat_id}: "${text.substring(0, 50)}${text.length > 50 ? "..." : ""}"`,
-  );
+  logger.info("Processing message", {
+    chat_id,
+    excerpt: `${text.substring(0, 50)}${text.length > 50 ? "..." : ""}`,
+  });
 
   // ── Auth check ────────────────────────────────────────────────
   if (!isAuthorized(env, chat_id)) {
-    console.log(`[handleMessage] Unauthorized chat_id: ${chat_id}`);
+    logger.warn("Unauthorized chat_id", { chat_id });
     return new Response("OK", { status: 200 });
   }
-  console.log(`[handleMessage] Authorization passed for chat_id: ${chat_id}`);
+  logger.info("Authorization passed", { chat_id });
 
   // ── Check if user is in a session (e.g. awaiting custom text) ─
   const sessionRaw = await env.SESSION.get(`session:${chat_id}`);
@@ -129,9 +138,12 @@ async function handleMessage(
 async function handleCallback(
   query: TelegramCallbackQuery,
   env: Env,
+  logger: LoggerLike,
 ): Promise<Response> {
   const chat_id = query.message.chat.id;
   const data = query.data ?? "";
+
+  logger.info("Handling callback", { chat_id, data });
 
   if (!isAuthorized(env, chat_id)) {
     return new Response("OK", { status: 200 });

@@ -1,5 +1,6 @@
 import { Env } from "../types/index.js";
 import { isMaintainer } from "../lib/github.js";
+import { Logger, LoggerLike } from "../lib/logger.js";
 
 export default {
   async fetch(_request: Request, _env: Env): Promise<Response> {
@@ -12,13 +13,17 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> {
-    console.log(`[github-poller] Scheduled event triggered`);
-    ctx.waitUntil(pollAllSubscriptions(env));
+    const logger = new Logger("github-poller", env.LOG_LEVEL ?? "info");
+    logger.info("Scheduled event triggered");
+    ctx.waitUntil(pollAllSubscriptions(env, logger));
   },
 };
 
-async function pollAllSubscriptions(env: Env): Promise<void> {
-  console.log(`[pollAllSubscriptions] Starting polling cycle`);
+async function pollAllSubscriptions(
+  env: Env,
+  logger: LoggerLike,
+): Promise<void> {
+  logger.info("Starting polling cycle");
   // Get all active subscriptions
   const subs = (await env.DB.prepare(
     `
@@ -35,39 +40,42 @@ async function pollAllSubscriptions(env: Env): Promise<void> {
       user_id: string;
     }>;
   };
-  console.log(
-    `[pollAllSubscriptions] Found ${subs.results?.length || 0} subscriptions to poll`,
-  );
+  logger.info("Found subscriptions to poll", {
+    count: subs.results?.length || 0,
+  });
 
   if (!subs.results.length) {
-    console.log(`[pollAllSubscriptions] No subscriptions, exiting`);
+    logger.info("No subscriptions, exiting");
     return;
   }
 
   const now = new Date();
 
   for (const sub of subs.results) {
+    const subLogger: LoggerLike = logger.child({
+      repo: sub.repo,
+      subscription_id: sub.id,
+    });
     try {
-      console.log(
-        `[pollAllSubscriptions] Processing subscription for ${sub.repo}`,
-      );
+      subLogger.info("Processing subscription", { user_id: sub.user_id });
       const lastChecked = new Date(sub.last_checked_at);
       const minutesSince = (now.getTime() - lastChecked.getTime()) / 1000 / 60;
 
       // Only poll if enough time has passed
       if (minutesSince < sub.poll_interval) {
-        console.log(
-          `[pollAllSubscriptions] Skipping ${sub.repo} — ${minutesSince.toFixed(1)} mins since last check, interval is ${sub.poll_interval} mins`,
-        );
+        subLogger.info("Skipping poll due to interval", {
+          minutesSince: minutesSince.toFixed(1),
+          poll_interval: sub.poll_interval,
+        });
         continue;
       }
 
-      console.log(
-        `[pollAllSubscriptions] Polling ${sub.repo} after ${minutesSince.toFixed(1)} minutes`,
-      );
-      await pollRepo(sub, env, now);
+      subLogger.info("Polling repository", {
+        minutesSince: minutesSince.toFixed(1),
+      });
+      await pollRepo(sub, env, now, subLogger);
     } catch (err) {
-      console.error(`[pollAllSubscriptions] Error polling ${sub.repo}:`, err);
+      subLogger.error("Error polling subscription", { error: err });
     }
   }
 }
@@ -75,15 +83,18 @@ async function pollRepo(
   sub: { id: string; repo: string; last_checked_at: string; user_id: string },
   env: Env,
   now: Date,
+  logger: LoggerLike,
 ): Promise<void> {
   const { id, repo, last_checked_at, user_id } = sub;
 
   // Single tenant always uses Worker Secret — never D1
   const pat =
-    env.MULTI_TENANT === "false" ? env.GH_PAT : await getUserPat(env, user_id);
+    env.MULTI_TENANT === "false"
+      ? env.GH_PAT
+      : await getUserPat(env, user_id, logger);
 
   if (!pat) {
-    console.error(`[pollRepo] No PAT available for ${repo}`);
+    logger.error("No PAT available", { repo });
     return;
   }
 
@@ -100,8 +111,8 @@ async function pollRepo(
   });
 
   if (!res.ok) {
-    console.error(`[pollRepo] GitHub API error for ${repo}: ${res.status}`);
-    await updateLastChecked(env, id, now);
+    logger.error("GitHub API error", { repo, status: res.status });
+    await updateLastChecked(env, id, now, logger);
     return;
   }
 
@@ -114,9 +125,11 @@ async function pollRepo(
       new Date(i.created_at).getTime() > new Date(last_checked_at).getTime(),
   );
 
-  console.log(
-    `[pollRepo] ${repo}: ${newIssues.length} new issues since ${since}`,
-  );
+  logger.info("New issues found", {
+    repo,
+    newIssues: newIssues.length,
+    since,
+  });
 
   for (const issue of newIssues) {
     const reporterIsMaintainer = await isMaintainer(
@@ -134,33 +147,36 @@ async function pollRepo(
     });
   }
 
-  await updateLastChecked(env, id, now);
+  await updateLastChecked(env, id, now, logger);
 }
 
 async function updateLastChecked(
   env: Env,
   sub_id: string,
   now: Date,
+  logger: LoggerLike,
 ): Promise<void> {
-  console.log(
-    `[updateLastChecked] Updating subscription ${sub_id} to ${now.toISOString()}`,
-  );
+  logger.info("Updating subscription last checked", {
+    sub_id,
+    at: now.toISOString(),
+  });
   await env.DB.prepare(
     `UPDATE subscriptions SET last_checked_at = ? WHERE id = ?`,
   )
     .bind(now.toISOString(), sub_id)
     .run();
-  console.log(`[updateLastChecked] Update complete`);
+  logger.info("Update complete", { sub_id });
 }
 
 async function getUserPat(
   env: Env,
   user_id: string,
+  logger: LoggerLike,
 ): Promise<string | undefined> {
-  console.log(`[getUserPat] Retrieving PAT for user ${user_id}`);
+  logger.info("Retrieving user PAT", { user_id });
   const user = await env.DB.prepare(`SELECT gh_pat FROM users WHERE id = ?`)
     .bind(user_id)
     .first();
-  console.log(`[getUserPat] PAT retrieved for user ${user_id}`);
+  logger.info("PAT retrieved for user", { user_id });
   return user?.gh_pat as string | undefined;
 }
