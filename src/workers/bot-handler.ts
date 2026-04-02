@@ -1,17 +1,23 @@
+import {
+  Env,
+  TelegramUpdate,
+  TelegramMessage,
+  TelegramCallbackQuery,
+} from "../types/index.js";
 import { isAuthorized, resolveUser } from "../lib/resolveUser.js";
 import { sendMessage, answerCallbackQuery } from "../lib/telegram.js";
 import { postComment } from "../lib/github.js";
 import { generateId } from "../lib/utils.js";
 
 export default {
-  async fetch(request, env) {
+  async fetch(request: Request, env: Env): Promise<Response> {
     console.log(`[bot-handler] Incoming ${request.method} request`);
     if (request.method !== "POST") {
       console.log(`[bot-handler] Non-POST request, returning OK`);
       return new Response("OK", { status: 200 });
     }
 
-    const update = await request.json();
+    const update = (await request.json()) as TelegramUpdate;
     console.log(
       `[bot-handler] Received update, type: ${update.message ? "message" : update.callback_query ? "callback_query" : "unknown"}`,
     );
@@ -39,7 +45,10 @@ export default {
 // ─────────────────────────────────────────────────────────────────
 // MESSAGE HANDLER
 // ─────────────────────────────────────────────────────────────────
-async function handleMessage(message, env) {
+async function handleMessage(
+  message: TelegramMessage,
+  env: Env,
+): Promise<Response> {
   const chat_id = message.chat.id;
   const text = message.text || "";
   console.log(
@@ -117,9 +126,12 @@ async function handleMessage(message, env) {
 // ─────────────────────────────────────────────────────────────────
 // CALLBACK HANDLER (inline button taps)
 // ─────────────────────────────────────────────────────────────────
-async function handleCallback(query, env) {
+async function handleCallback(
+  query: TelegramCallbackQuery,
+  env: Env,
+): Promise<Response> {
   const chat_id = query.message.chat.id;
-  const data = query.data;
+  const data = query.data ?? "";
 
   if (!isAuthorized(env, chat_id)) {
     return new Response("OK", { status: 200 });
@@ -178,7 +190,7 @@ async function handleCallback(query, env) {
 // ─────────────────────────────────────────────────────────────────
 // COMMANDS
 // ─────────────────────────────────────────────────────────────────
-async function cmdStart(chat_id, env) {
+async function cmdStart(chat_id: number, env: Env): Promise<Response> {
   await sendMessage(
     env.BOT_TOKEN,
     chat_id,
@@ -196,11 +208,15 @@ async function cmdStart(chat_id, env) {
   return new Response("OK", { status: 200 });
 }
 
-async function cmdHelp(chat_id, env) {
+async function cmdHelp(chat_id: number, env: Env): Promise<Response> {
   return cmdStart(chat_id, env);
 }
 
-async function cmdSubscribe(chat_id, text, env) {
+async function cmdSubscribe(
+  chat_id: number,
+  text: string,
+  env: Env,
+): Promise<Response> {
   const parts = text.trim().split(/\s+/);
   const repo = parts[1];
 
@@ -293,7 +309,7 @@ async function cmdSubscribe(chat_id, text, env) {
   return new Response("OK", { status: 200 });
 }
 
-async function cmdUnsubscribe(chat_id, env) {
+async function cmdUnsubscribe(chat_id: number, env: Env): Promise<Response> {
   const user = await resolveUser(env, chat_id);
 
   const subs = await env.DB.prepare(
@@ -328,7 +344,10 @@ async function cmdUnsubscribe(chat_id, env) {
   return new Response("OK", { status: 200 });
 }
 
-async function cmdListSubscriptions(chat_id, env) {
+async function cmdListSubscriptions(
+  chat_id: number,
+  env: Env,
+): Promise<Response> {
   const user = await resolveUser(env, chat_id);
 
   const subs = await env.DB.prepare(
@@ -369,7 +388,7 @@ async function cmdListSubscriptions(chat_id, env) {
   return new Response("OK", { status: 200 });
 }
 
-async function cmdTemplates(chat_id, env) {
+async function cmdTemplates(chat_id: number, env: Env): Promise<Response> {
   const user = await resolveUser(env, chat_id);
 
   const templates = await env.DB.prepare(
@@ -405,7 +424,7 @@ async function cmdTemplates(chat_id, env) {
   return new Response("OK", { status: 200 });
 }
 
-async function cmdNewTemplate(chat_id, env) {
+async function cmdNewTemplate(chat_id: number, env: Env): Promise<Response> {
   await env.SESSION.put(
     `session:${chat_id}`,
     JSON.stringify({ step: "awaiting_template_name" }),
@@ -424,7 +443,11 @@ async function cmdNewTemplate(chat_id, env) {
 // ─────────────────────────────────────────────────────────────────
 // CLAIM FLOW
 // ─────────────────────────────────────────────────────────────────
-async function handleClaimStart(chat_id, data, env) {
+async function handleClaimStart(
+  chat_id: number,
+  data: string,
+  env: Env,
+): Promise<Response> {
   // data = "claim:owner/repo:123"
   const parts = data.split(":");
   const repo = `${parts[1]}/${parts[2]}`;
@@ -453,7 +476,11 @@ async function handleClaimStart(chat_id, data, env) {
   return new Response("OK", { status: 200 });
 }
 
-async function handleShowTemplates(chat_id, data, env) {
+async function handleShowTemplates(
+  chat_id: number,
+  data: string,
+  env: Env,
+): Promise<Response> {
   // data = "use_template:owner/repo:123"
   const parts = data.split(":");
   const repo = `${parts[1]}/${parts[2]}`;
@@ -490,7 +517,11 @@ async function handleShowTemplates(chat_id, data, env) {
   return new Response("OK", { status: 200 });
 }
 
-async function handleWriteCustom(chat_id, data, env) {
+async function handleWriteCustom(
+  chat_id: number,
+  data: string,
+  env: Env,
+): Promise<Response> {
   // data = "write_custom:owner/repo:123"
   const parts = data.split(":");
   const repo = `${parts[1]}/${parts[2]}`;
@@ -511,16 +542,20 @@ async function handleWriteCustom(chat_id, data, env) {
   return new Response("OK", { status: 200 });
 }
 
-async function handlePickTemplate(chat_id, data, env) {
+async function handlePickTemplate(
+  chat_id: number,
+  data: string,
+  env: Env,
+): Promise<Response> {
   // data = "pick_template:{template_id}:{repo}:{issue_number}"
   const parts = data.split(":");
   const template_id = parts[1];
   const repo = `${parts[2]}/${parts[3]}`;
   const issueNumber = parts[4];
 
-  const template = await env.DB.prepare(`SELECT * FROM templates WHERE id = ?`)
+  const template = (await env.DB.prepare(`SELECT * FROM templates WHERE id = ?`)
     .bind(template_id)
-    .first();
+    .first()) as ({ body: string } & { id: string }) | undefined;
 
   if (!template) {
     await sendMessage(env.BOT_TOKEN, chat_id, "Template not found.");
@@ -530,29 +565,34 @@ async function handlePickTemplate(chat_id, data, env) {
   await postAndConfirm(
     chat_id,
     repo,
-    issueNumber,
+    Number(issueNumber),
     template.body,
-    template_id,
+    template_id ?? null,
     env,
   );
   return new Response("OK", { status: 200 });
 }
 
-async function handleCustomComment(chat_id, text, session, env) {
+async function handleCustomComment(
+  chat_id: number,
+  text: string,
+  session: any,
+  env: Env,
+): Promise<Response> {
   const { repo, issue_number } = session;
   await env.SESSION.delete(`session:${chat_id}`);
-  await postAndConfirm(chat_id, repo, issue_number, text, null, env);
+  await postAndConfirm(chat_id, repo, Number(issue_number), text, null, env);
   return new Response("OK", { status: 200 });
 }
 
 async function postAndConfirm(
-  chat_id,
-  repo,
-  issueNumber,
-  body,
-  template_id,
-  env,
-) {
+  chat_id: number,
+  repo: string,
+  issueNumber: string | number,
+  body: string,
+  _template_id: string | null,
+  env: Env,
+): Promise<Response> {
   const user = await resolveUser(env, chat_id);
 
   // Post comment to GitHub as you (PAT)
@@ -601,12 +641,19 @@ async function postAndConfirm(
       `Failed to post comment. GitHub said: ${comment.message || "unknown error"}`,
     );
   }
+
+  return new Response("OK", { status: 200 });
 }
 
 // ─────────────────────────────────────────────────────────────────
 // TEMPLATE CRUD
 // ─────────────────────────────────────────────────────────────────
-async function handleNewTemplateName(chat_id, text, session, env) {
+async function handleNewTemplateName(
+  chat_id: number,
+  text: string,
+  _session: any,
+  env: Env,
+): Promise<Response> {
   await env.SESSION.put(
     `session:${chat_id}`,
     JSON.stringify({ step: "awaiting_template_body", name: text.trim() }),
@@ -622,7 +669,12 @@ async function handleNewTemplateName(chat_id, text, session, env) {
   return new Response("OK", { status: 200 });
 }
 
-async function handleNewTemplateBody(chat_id, text, session, env) {
+async function handleNewTemplateBody(
+  chat_id: number,
+  text: string,
+  _session: any,
+  env: Env,
+): Promise<Response> {
   const user = await resolveUser(env, chat_id);
   await env.SESSION.delete(`session:${chat_id}`);
 
@@ -630,19 +682,23 @@ async function handleNewTemplateBody(chat_id, text, session, env) {
   await env.DB.prepare(
     `INSERT INTO templates (id, user_id, name, body) VALUES (?, ?, ?, ?)`,
   )
-    .bind(id, user.id, session.name, text.trim())
+    .bind(id, user.id, _session.name, text.trim())
     .run();
 
   await sendMessage(
     env.BOT_TOKEN,
     chat_id,
-    `Template <b>${session.name}</b> saved!\n\nUse /templates to view all templates.`,
+    `<b>Template <b>${_session.name}</b> saved!</b>\n\nUse /templates to view all templates.`,
   );
 
   return new Response("OK", { status: 200 });
 }
 
-async function handleDeleteTemplate(chat_id, data, env) {
+async function handleDeleteTemplate(
+  chat_id: number,
+  data: string,
+  env: Env,
+): Promise<Response> {
   const template_id = data.split(":")[1];
 
   await env.DB.prepare(`DELETE FROM templates WHERE id = ?`)
@@ -656,7 +712,11 @@ async function handleDeleteTemplate(chat_id, data, env) {
 // ─────────────────────────────────────────────────────────────────
 // SUBSCRIPTION MANAGEMENT
 // ─────────────────────────────────────────────────────────────────
-async function handleUnsubConfirm(chat_id, data, env) {
+async function handleUnsubConfirm(
+  chat_id: number,
+  data: string,
+  env: Env,
+): Promise<Response> {
   const sub_id = data.split(":")[1];
 
   await env.DB.prepare(
@@ -672,7 +732,33 @@ async function handleUnsubConfirm(chat_id, data, env) {
 // ─────────────────────────────────────────────────────────────────
 // LABEL PICKER (during /subscribe flow)
 // ─────────────────────────────────────────────────────────────────
-async function handleLabelDone(chat_id, data, env) {
+async function handleLabelToggle(
+  _chat_id: number,
+  data: string,
+  message: TelegramMessage,
+  env: Env,
+): Promise<Response> {
+  // label_toggle:{sub_id}:{label}
+  const parts = data.split(":");
+  const sub_id = parts[1];
+  const label = parts.slice(2).join(":");
+
+  const id = generateId();
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO label_filters (id, subscription_id, user_id, label) VALUES (?, ?, ?, ?)`,
+  )
+    .bind(id, sub_id, env.OWNER_ID, label)
+    .run();
+
+  await answerCallbackQuery(env.BOT_TOKEN, message.message_id.toString());
+  return new Response("OK", { status: 200 });
+}
+
+async function handleLabelDone(
+  chat_id: number,
+  data: string,
+  env: Env,
+): Promise<Response> {
   const sub_id = data.split(":")[1];
   await env.SESSION.delete(`session:${chat_id}`);
 
@@ -695,7 +781,12 @@ async function handleLabelDone(chat_id, data, env) {
   return new Response("OK", { status: 200 });
 }
 
-async function handleLabelInput(chat_id, text, session, env) {
+async function handleLabelInput(
+  chat_id: number,
+  text: string,
+  session: any,
+  env: Env,
+): Promise<Response> {
   const { sub_id, repo, selected } = session;
   const label = text.trim().toLowerCase();
 
@@ -732,10 +823,14 @@ async function handleLabelInput(chat_id, text, session, env) {
   return new Response("OK", { status: 200 });
 }
 
-async function cmdSetInterval(chat_id, text, env) {
+async function cmdSetInterval(
+  chat_id: number,
+  text: string,
+  env: Env,
+): Promise<Response> {
   const user = await resolveUser(env, chat_id);
   const parts = text.trim().split(/\s+/);
-  const minutes = parseInt(parts[1]);
+  const minutes = parseInt(parts[1] ?? "0", 10);
 
   // If interval provided directly
   if (minutes && minutes >= 5 && minutes <= 1440) {
@@ -756,16 +851,26 @@ async function cmdSetInterval(chat_id, text, env) {
     }
 
     if (subs.results.length === 1) {
+      const firstSub = subs.results[0];
+      if (!firstSub) {
+        await sendMessage(
+          env.BOT_TOKEN,
+          chat_id,
+          "Unexpected error finding subscription.",
+        );
+        return new Response("OK", { status: 200 });
+      }
+
       await env.DB.prepare(
         `UPDATE subscriptions SET poll_interval = ? WHERE id = ?`,
       )
-        .bind(minutes, subs.results[0].id)
+        .bind(minutes, firstSub.id)
         .run();
 
       await sendMessage(
         env.BOT_TOKEN,
         chat_id,
-        `✅ Poll interval for <code>${subs.results[0].repo}</code> set to <b>${minutes} minutes</b>.`,
+        `✅ Poll interval for <code>${firstSub.repo}</code> set to <b>${minutes} minutes</b>.`,
       );
       return new Response("OK", { status: 200 });
     }
@@ -820,16 +925,25 @@ async function cmdSetInterval(chat_id, text, env) {
   return new Response("OK", { status: 200 });
 }
 
-async function handleSetIntervalConfirm(chat_id, data, env) {
+async function handleSetIntervalConfirm(
+  chat_id: number,
+  data: string,
+  env: Env,
+): Promise<Response> {
   const parts = data.split(":");
   const sub_id = parts[1];
-  const minutes = parseInt(parts[2]);
+  const minutes = parseInt(parts[2] ?? "0", 10);
 
   const sub = await env.DB.prepare(
     `SELECT repo FROM subscriptions WHERE id = ?`,
   )
     .bind(sub_id)
     .first();
+
+  if (!sub) {
+    await sendMessage(env.BOT_TOKEN, chat_id, "Subscription not found.");
+    return new Response("OK", { status: 200 });
+  }
 
   await env.DB.prepare(
     `UPDATE subscriptions SET poll_interval = ? WHERE id = ?`,

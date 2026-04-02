@@ -1,13 +1,13 @@
-import { resolveUser, isAuthorized } from "../lib/resolveUser.js";
+import { Env, IssueQueueMessage } from "../types/index.js";
 import { sendMessage, buildIssueMessage } from "../lib/telegram.js";
 
 export default {
-  async fetch(request, env) {
+  async fetch(_request: Request, _env: Env): Promise<Response> {
     // Dispatcher is cron-only, not meant to be called via HTTP
     return new Response("Dispatcher is running on schedule.", { status: 200 });
   },
 
-  async queue(batch, env) {
+  async queue(batch: MessageBatch<IssueQueueMessage>, env: Env): Promise<void> {
     console.log(
       `[dispatcher] Processing batch with ${batch.messages.length} messages`,
     );
@@ -28,7 +28,18 @@ export default {
   },
 };
 
-async function handleIssueEvent(event, env) {
+type Recipient = {
+  sub_id: string;
+  user_id: string;
+  chat_id: number;
+  gh_username: string;
+  gh_pat: string;
+};
+
+async function handleIssueEvent(
+  event: IssueQueueMessage,
+  env: Env,
+): Promise<void> {
   const { repo, issue, action, triggerLabel } = event;
   console.log(
     `[handleIssueEvent] Processing ${action} for ${repo}#${issue.number} by @${issue.user.login}`,
@@ -53,21 +64,21 @@ async function handleIssueEvent(event, env) {
 
   // ── In single tenant mode there are no users rows ─────────────
   // ── so we manually resolve the one owner ─────────────────────
-  let recipients = [];
+  let recipients: Recipient[] = [];
 
   if (env.MULTI_TENANT === "false") {
     console.log(
       `[handleIssueEvent] Single tenant mode, checking owner subscription`,
     );
     // Check if owner has a subscription for this repo
-    const ownerSub = await env.DB.prepare(
+    const ownerSub = (await env.DB.prepare(
       `
         SELECT id FROM subscriptions
         WHERE user_id = ? AND repo = ? AND is_active = TRUE
       `,
     )
       .bind(env.OWNER_ID, repo)
-      .first();
+      .first()) as { id: string } | undefined;
 
     if (!ownerSub) {
       console.log(
@@ -90,10 +101,21 @@ async function handleIssueEvent(event, env) {
     // Multi tenant — build recipients from D1 join results
     recipients = await Promise.all(
       subs.results.map(async (sub) => {
-        const user = await env.DB.prepare(`SELECT * FROM users WHERE id = ?`)
+        const user = (await env.DB.prepare(`SELECT * FROM users WHERE id = ?`)
           .bind(sub.user_id)
-          .first();
-        return { ...user, sub_id: sub.id };
+          .first()) as {
+          id: string;
+          chat_id: number;
+          gh_username: string;
+          gh_pat: string;
+        };
+        return {
+          sub_id: sub.id as string,
+          user_id: user.id,
+          chat_id: user.chat_id,
+          gh_username: user.gh_username,
+          gh_pat: user.gh_pat,
+        };
       }),
     );
   }
@@ -106,7 +128,7 @@ async function handleIssueEvent(event, env) {
     const shouldNotify = await checkLabelFilter(
       env,
       recipient.sub_id,
-      issue.labels?.map((l) => l.name) || [],
+      issue.labels?.map((l: { name: string }) => l.name) || [],
       triggerLabel,
     );
 
@@ -159,7 +181,12 @@ async function handleIssueEvent(event, env) {
 // ── Check if this issue matches the user's label filters ─────────
 // If user has no filters → notify on everything
 // If user has filters → only notify if issue has at least one match
-async function checkLabelFilter(env, sub_id, issueLabels, triggerLabel) {
+async function checkLabelFilter(
+  env: Env,
+  sub_id: string,
+  issueLabels: string[],
+  triggerLabel: string | null,
+): Promise<boolean> {
   const filters = await env.DB.prepare(
     `SELECT label FROM label_filters WHERE subscription_id = ?`,
   )
@@ -168,21 +195,21 @@ async function checkLabelFilter(env, sub_id, issueLabels, triggerLabel) {
 
   if (filters.results.length === 0) return true; // no filter = all labels
 
-  const watchList = filters.results.map((f) => f.label.toLowerCase());
+  const watchList = filters.results.map((f: any) => f.label.toLowerCase());
   const candidates = [
     ...issueLabels.map((l) => l.toLowerCase()),
-    triggerLabel?.toLowerCase(),
-  ].filter(Boolean);
+    ...(triggerLabel ? [triggerLabel.toLowerCase()] : []),
+  ];
 
   return candidates.some((l) => watchList.includes(l));
 }
 
 // ── Get labels user is watching for this subscription ────────────
-async function getWatchingLabels(env, sub_id) {
+async function getWatchingLabels(env: Env, sub_id: string): Promise<string[]> {
   const filters = await env.DB.prepare(
     `SELECT label FROM label_filters WHERE subscription_id = ?`,
   )
     .bind(sub_id)
     .all();
-  return filters.results.map((f) => f.label);
+  return (filters.results as { label: string }[]).map((f) => f.label);
 }

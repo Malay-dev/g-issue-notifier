@@ -1,6 +1,6 @@
 const BASE = "https://api.github.com";
 
-function headers(pat) {
+function headers(pat: string): Record<string, string> {
   return {
     Authorization: `Bearer ${pat}`,
     Accept: "application/vnd.github+json",
@@ -10,7 +10,14 @@ function headers(pat) {
   };
 }
 
-export async function postComment(pat, repo, issueNumber, body) {
+import { GitHubComment } from "../types/index.js";
+
+export async function postComment(
+  pat: string,
+  repo: string,
+  issueNumber: number | string,
+  body: string,
+): Promise<GitHubComment> {
   console.log(`[github.postComment] Posting comment to ${repo}#${issueNumber}`);
   console.log(`[github.postComment] Body length: ${body.length} chars`);
   const res = await fetch(
@@ -21,12 +28,17 @@ export async function postComment(pat, repo, issueNumber, body) {
       body: JSON.stringify({ body }),
     },
   );
-  const result = await res.json();
+  const result = (await res.json()) as GitHubComment;
   console.log(`[github.postComment] Response status: ${res.status}`);
   return result;
 }
 
-export async function isMaintainer(pat, repo, username, kv) {
+export async function isMaintainer(
+  pat: string,
+  repo: string,
+  username: string,
+  kv: KVNamespace,
+): Promise<boolean> {
   console.log(
     `[github.isMaintainer] Checking if @${username} is maintainer of ${repo}`,
   );

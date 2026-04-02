@@ -1,6 +1,11 @@
-export async function resolveUser(env, chat_id) {
+import { Env, UserRow, ResolvedUser } from "../types/index.js";
+
+export async function resolveUser(
+  env: Env,
+  chat_id: number,
+): Promise<ResolvedUser> {
   if (env.MULTI_TENANT === "false") {
-    const user = {
+    const user: ResolvedUser = {
       id: env.OWNER_ID,
       chat_id: Number(env.OWNER_CHAT_ID),
       gh_username: env.OWNER_GH_USER,
@@ -22,19 +27,19 @@ export async function resolveUser(env, chat_id) {
     return user;
   }
 
-  const user = await env.DB.prepare(
+  const user = (await env.DB.prepare(
     `SELECT * FROM users WHERE chat_id = ? AND is_active = TRUE`,
   )
     .bind(chat_id)
-    .first();
+    .first()) as Partial<UserRow> | undefined;
 
   if (!user) throw new Error("UNAUTHORIZED");
 
-  // In multi-tenant, PAT comes from D1 (encrypted at rest by Cloudflare)
-  return user;
+  // In multi-tenant, we need to cast to include gh_pat as string (not null)
+  return user as ResolvedUser;
 }
 
-export function isAuthorized(env, chat_id) {
+export function isAuthorized(env: Env, chat_id: number): boolean {
   console.log(`[isAuthorized] Checking authorization for chat_id: ${chat_id}`);
   if (env.MULTI_TENANT === "false") {
     const authorized = String(chat_id) === String(env.OWNER_CHAT_ID);

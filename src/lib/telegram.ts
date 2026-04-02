@@ -1,6 +1,13 @@
 const BASE = "https://api.telegram.org/bot";
 
-export async function sendMessage(token, chat_id, text, extra = {}) {
+import { GitHubIssue } from "../types/index.js";
+
+export async function sendMessage(
+  token: string,
+  chat_id: number,
+  text: string,
+  extra: Record<string, unknown> = {},
+): Promise<unknown> {
   console.log(
     `[telegram.sendMessage] Sending message to chat ${chat_id}, text length: ${text.length}`,
   );
@@ -14,14 +21,18 @@ export async function sendMessage(token, chat_id, text, extra = {}) {
       ...extra,
     }),
   });
-  const result = await res.json();
+  const result = (await res.json()) as { result?: { message_id?: number } };
   console.log(
     `[telegram.sendMessage] Response status: ${res.status}, message_id: ${result.result?.message_id}`,
   );
   return result;
 }
 
-export async function answerCallbackQuery(token, callback_query_id, text = "") {
+export async function answerCallbackQuery(
+  token: string,
+  callback_query_id: string,
+  text = "",
+): Promise<Response> {
   console.log(
     `[telegram.answerCallbackQuery] Answering callback query: ${callback_query_id}`,
   );
@@ -35,11 +46,11 @@ export async function answerCallbackQuery(token, callback_query_id, text = "") {
 }
 
 export async function editMessageReplyMarkup(
-  token,
-  chat_id,
-  message_id,
-  reply_markup,
-) {
+  token: string,
+  chat_id: number,
+  message_id: number,
+  reply_markup: unknown,
+): Promise<Response> {
   console.log(
     `[telegram.editMessageReplyMarkup] Editing message ${message_id} in chat ${chat_id}`,
   );
@@ -54,14 +65,19 @@ export async function editMessageReplyMarkup(
   return res;
 }
 
-export function buildIssueMessage(issue, repo, watchingLabels = []) {
+export function buildIssueMessage(
+  issue: GitHubIssue,
+  repo: string,
+  watchingLabels: string[] = [],
+): string {
   console.log(
     `[telegram.buildIssueMessage] Building message for ${repo}#${issue.number}`,
   );
   const isMaintainer = issue._isMaintainer;
-  const labels = issue.labels?.map((l) => l.name) || [];
+  const labels = issue.labels?.map((l: { name: string }) => l.name) || [];
   const assignees =
-    issue.assignees?.map((a) => `@${a.login}`).join(", ") || "None";
+    issue.assignees?.map((a: { login: string }) => `@${a.login}`).join(", ") ||
+    "None";
   const watching = watchingLabels.length
     ? watchingLabels.join(", ")
     : "All labels";
@@ -88,13 +104,15 @@ export function buildIssueMessage(issue, repo, watchingLabels = []) {
   ].join("\n");
 }
 
-function truncate(text, max = 300) {
+export function truncate(text: string | null, max = 300): string {
   if (!text) return "No description provided.";
   return text.length > max ? text.slice(0, max).trimEnd() + "…" : text;
 }
 
-function timeAgo(dateString) {
-  const seconds = Math.floor((Date.now() - new Date(dateString)) / 1000);
+function timeAgo(dateString: string): string {
+  const seconds = Math.floor(
+    (Date.now() - new Date(dateString).getTime()) / 1000,
+  );
   if (seconds < 60) return `${seconds} seconds ago`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;

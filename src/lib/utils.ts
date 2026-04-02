@@ -1,21 +1,25 @@
-export function generateId() {
+export function generateId(): string {
   return crypto.randomUUID();
 }
 
-export function timeAgo(dateString) {
-  const seconds = Math.floor((Date.now() - new Date(dateString)) / 1000);
+export function timeAgo(dateString: string): string {
+  const seconds = Math.floor((Date.now() - new Date(dateString).getTime()) / 1000);
   if (seconds < 60) return `${seconds} seconds ago`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
   return `${Math.floor(seconds / 86400)} days ago`;
 }
 
-export function truncate(text, max = 300) {
+export function truncate(text: string, max = 300): string {
   if (!text) return "No description provided.";
   return text.length > max ? text.slice(0, max).trimEnd() + "…" : text;
 }
 
-export function validateHmac(secret, signature, body) {
+export function validateHmac(
+  secret: string,
+  signature: string,
+  body: string,
+): Promise<boolean> {
   console.log(`[utils.validateHmac] Validating HMAC signature`);
   // Used by github-webhook to verify payload authenticity
   const encoder = new TextEncoder();
