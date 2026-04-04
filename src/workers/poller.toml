@@ -1,5 +1,5 @@
 name = "g-issue-notifier-poller"
-main = "github-poller.js"
+main = "github-poller.ts"
 compatibility_date = "2026-01-01"
 
 [vars]
