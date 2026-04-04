@@ -455,15 +455,29 @@ async function cmdNewTemplate(chat_id: number, env: Env): Promise<Response> {
 // ─────────────────────────────────────────────────────────────────
 // CLAIM FLOW
 // ─────────────────────────────────────────────────────────────────
+
+// ── Shared helper — parse claim callback data ─────────────────────
+// callback format: "action:owner/repo:issueNumber"
+function parseClaimData(data: string): {
+  action: string;
+  repo: string;
+  issueNumber: string;
+} {
+  const firstColon = data.indexOf(":");
+  const lastColon = data.lastIndexOf(":");
+  return {
+    action: data.slice(0, firstColon),
+    repo: data.slice(firstColon + 1, lastColon),
+    issueNumber: data.slice(lastColon + 1),
+  };
+}
+
 async function handleClaimStart(
   chat_id: number,
   data: string,
   env: Env,
 ): Promise<Response> {
-  // data = "claim:owner/repo:123"
-  const parts = data.split(":");
-  const repo = `${parts[1]}/${parts[2]}`;
-  const issueNumber = parts[3];
+  const { repo, issueNumber } = parseClaimData(data);
 
   const inline_keyboard = [
     [
@@ -493,10 +507,7 @@ async function handleShowTemplates(
   data: string,
   env: Env,
 ): Promise<Response> {
-  // data = "use_template:owner/repo:123"
-  const parts = data.split(":");
-  const repo = `${parts[1]}/${parts[2]}`;
-  const issueNumber = parts[3];
+  const { repo, issueNumber } = parseClaimData(data);
 
   const user = await resolveUser(env, chat_id);
 
@@ -534,10 +545,7 @@ async function handleWriteCustom(
   data: string,
   env: Env,
 ): Promise<Response> {
-  // data = "write_custom:owner/repo:123"
-  const parts = data.split(":");
-  const repo = `${parts[1]}/${parts[2]}`;
-  const issueNumber = parts[3];
+  const { repo, issueNumber } = parseClaimData(data);
 
   await env.SESSION.put(
     `session:${chat_id}`,
@@ -559,11 +567,15 @@ async function handlePickTemplate(
   data: string,
   env: Env,
 ): Promise<Response> {
-  // data = "pick_template:{template_id}:{repo}:{issue_number}"
-  const parts = data.split(":");
-  const template_id = parts[1];
-  const repo = `${parts[2]}/${parts[3]}`;
-  const issueNumber = parts[4];
+  // format: pick_template:{template_id}:{repo}:{issueNumber}
+  const firstColon = data.indexOf(":");
+  const rest = data.slice(firstColon + 1); // "{template_id}:{repo}:{issueNumber}"
+  const secondColon = rest.indexOf(":");
+  const template_id = rest.slice(0, secondColon);
+  const remaining = rest.slice(secondColon + 1); // "{repo}:{issueNumber}"
+  const lastColon = remaining.lastIndexOf(":");
+  const repo = remaining.slice(0, lastColon);
+  const issueNumber = remaining.slice(lastColon + 1);
 
   const template = (await env.DB.prepare(`SELECT * FROM templates WHERE id = ?`)
     .bind(template_id)
