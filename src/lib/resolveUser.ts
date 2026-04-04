@@ -1,4 +1,5 @@
-import { Env, UserRow, ResolvedUser } from "../types/index.js";
+import { Env, ResolvedUser } from "../types/index.js";
+import { decryptPat } from "./crypto.js";
 
 export async function resolveUser(
   env: Env,
@@ -9,12 +10,11 @@ export async function resolveUser(
       id: env.OWNER_ID,
       chat_id: Number(env.OWNER_CHAT_ID),
       gh_username: env.OWNER_GH_USER,
-      gh_pat: env.GH_PAT, // always from Worker Secret, never D1
+      gh_pat: env.GH_PAT, // always from Worker Secret
     };
 
     // Ensure owner row exists for FK constraints
-    // gh_pat intentionally stored as NULL in single-tenant
-    // real PAT always comes from Worker Secret above
+    // gh_pat intentionally NULL in D1 for single-tenant
     await env.DB.prepare(
       `
         INSERT OR IGNORE INTO users (id, chat_id, gh_username, gh_pat)
@@ -27,25 +27,35 @@ export async function resolveUser(
     return user;
   }
 
-  const user = (await env.DB.prepare(
+  // ── Multi-tenant ──────────────────────────────────────────────
+  const row = await env.DB.prepare(
     `SELECT * FROM users WHERE chat_id = ? AND is_active = TRUE`,
   )
     .bind(chat_id)
-    .first()) as Partial<UserRow> | undefined;
+    .first<{
+      id: string;
+      chat_id: number;
+      gh_username: string;
+      gh_pat: string | null;
+    }>();
 
-  if (!user) throw new Error("UNAUTHORIZED");
+  if (!row) throw new Error("UNAUTHORIZED");
+  if (!row.gh_pat) throw new Error("NO_PAT");
 
-  // In multi-tenant, we need to cast to include gh_pat as string (not null)
-  return user as ResolvedUser;
+  // Decrypt PAT using ENCRYPTION_KEY Worker Secret
+  const decrypted = await decryptPat(row.gh_pat, env.ENCRYPTION_KEY);
+
+  return {
+    id: row.id,
+    chat_id: row.chat_id,
+    gh_username: row.gh_username,
+    gh_pat: decrypted,
+  };
 }
 
 export function isAuthorized(env: Env, chat_id: number): boolean {
-  console.log(`[isAuthorized] Checking authorization for chat_id: ${chat_id}`);
   if (env.MULTI_TENANT === "false") {
-    const authorized = String(chat_id) === String(env.OWNER_CHAT_ID);
-    console.log(`[isAuthorized] Single tenant mode, authorized: ${authorized}`);
-    return authorized;
+    return String(chat_id) === String(env.OWNER_CHAT_ID);
   }
-  console.log(`[isAuthorized] Multi-tenant mode, deferring to resolveUser`);
-  return true; // multi-tenant checks happen in resolveUser via D1
+  return true;
 }
