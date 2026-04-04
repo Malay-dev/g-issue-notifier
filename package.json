@@ -33,7 +33,16 @@
     "tail:bot": "wrangler tail g-issue-notifier-bot",
     "tail:poller": "wrangler tail g-issue-notifier-poller",
     "tail:dispatcher": "wrangler tail g-issue-notifier-dispatcher",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "secrets:publish": "node ./scripts/run-script.js publish-secrets",
+    "secrets:publish:win": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/publish-secrets.ps1",
+    "secrets:publish:sh": "bash scripts/publish-secrets.sh",
+    "webhook:register": "node ./scripts/run-script.js register-webhook",
+    "webhook:register:win": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/register-webhook.ps1",
+    "webhook:register:sh": "bash scripts/register-webhook.sh",
+    "webhook:verify": "node ./scripts/run-script.js verify-webhook",
+    "webhook:verify:win": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/verify-webhook.ps1",
+    "webhook:verify:sh": "bash scripts/verify-webhook.sh"
   },
   "license": "ISC"
 }
