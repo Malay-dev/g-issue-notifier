@@ -1,0 +1,263 @@
+# g-issue-notifier
+
+A serverless Telegram bot that monitors GitHub repositories for new issues and delivers instant notifications with a one-tap claim flow — built entirely on Cloudflare Workers, D1, Queues, and KV.
+
+## How It Works
+```
+GitHub repo gets a new issue
+          │
+          ▼
+Cron poller checks every N minutes (default: 10)
+          │
+          ▼
+Cloudflare Queue fans out to dispatcher
+          │
+          ▼
+Telegram notification with issue details + Claim button
+          │
+          ▼
+Tap Claim → pick a template or write custom comment
+          │
+          ▼
+Comment posted on GitHub as @yourghusername
+```
+
+## Features
+
+- **Cron-based polling** — works on any public repo, no admin access needed
+- **Label filters** — subscribe to specific labels per repo
+- **Configurable poll interval** — set per subscription via Telegram
+- **Claim flow** — one-tap comment on issues with saved templates or custom text
+- **Native GitHub comments** — posts as your GitHub account via PAT, not a bot account
+- **Multi-tenant ready** — schema and resolver support multiple users behind a feature flag
+- **AES-GCM PAT encryption** — per-user PATs encrypted at rest when multi-tenant is enabled
+- **Structured JSON logging** — trace IDs, log levels, consistent fields across all workers
+- **TypeScript strict mode** — fully typed throughout
+
+## Architecture
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      CLOUDFLARE EDGE                        │
+│                                                             │
+│   g-issue-notifier-bot          g-issue-notifier-poller     │
+│   (Telegram webhook handler)    (Cron: */5 * * * *)         │
+│                                                             │
+│   g-issue-notifier-dispatcher                               │
+│   (Queue consumer)                                          │
+│                                                             │
+│   D1: issuebot-db               Queue: issue-notifs         │
+│   KV: SESSION, CLAIM_CTX                                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Workers
+
+| Worker | Purpose |
+|---|---|
+| `g-issue-notifier-bot` | Handles all Telegram commands and callback queries |
+| `g-issue-notifier-poller` | Cron job — polls GitHub API for new issues |
+| `g-issue-notifier-dispatcher` | Queue consumer — formats and sends Telegram notifications |
+
+### Storage
+
+| Resource | Purpose |
+|---|---|
+| D1 `issuebot-db` | Subscriptions, label filters, templates, claims |
+| KV `SESSION` | Conversation state for multi-step commands |
+| KV `CLAIM_CTX` | Pending claim payloads (7 day TTL) |
+
+## Telegram Commands
+
+| Command | Description |
+|---|---|
+| `/start` | Welcome message and command list |
+| `/subscribe owner/repo` | Subscribe to a repository |
+| `/unsubscribe` | Remove a subscription |
+| `/subscriptions` | List active subscriptions and their label filters |
+| `/newtemplate` | Create a new claim response template |
+| `/templates` | View and delete saved templates |
+| `/setinterval [mins]` | Set poll interval for a subscription (min: 5, default: 10) |
+| `/help` | Show command list |
+
+## Notification Format
+```
+New Issue  •  owner/repo
+
+#42 — Issue title here
+
+Description excerpt up to 300 chars...
+
+──────────────────────────
+Watching:    bug, help wanted
+All Labels:  bug, help wanted, browser-compat
+Reporter:    @janedoe
+Maintainer:  Yes / No
+Assignees:   None
+Comments:    0
+Opened:      2 minutes ago
+──────────────────────────
+
+[ Claim Issue ]   [ Open on GitHub ]
+```
+
+## Project Structure
+```
+g-issue-notifier/
+├── src/
+│   ├── workers/
+│   │   ├── bot-handler.ts       # Telegram bot
+│   │   ├── github-poller.ts     # Cron poller
+│   │   ├── dispatcher.ts        # Queue consumer
+│   │   ├── poller.toml          # Poller worker config
+│   │   └── dispatcher.toml      # Dispatcher worker config
+│   ├── lib/
+│   │   ├── resolveUser.ts       # Single/multi-tenant user resolution
+│   │   ├── github.ts            # GitHub API client
+│   │   ├── telegram.ts          # Telegram API client
+│   │   ├── crypto.ts            # AES-GCM PAT encryption
+│   │   ├── logger.ts            # Structured JSON logger
+│   │   └── utils.ts             # Shared utilities
+│   └── types/
+│       └── index.ts             # All shared TypeScript types
+├── migrations/
+│   ├── 0001_init.sql            # Initial schema
+│   └── 0002_polling.sql         # Poll interval + last_checked_at
+├── scripts/
+│   ├── publish-secrets.ps1      # Push .dev.vars secrets to all workers
+│   ├── publish-secrets.sh       # Bash equivalent
+│   └── register-webhook.ps1     # Register Telegram webhook
+├── .dev.vars                    # Local secrets (never committed)
+├── .dev.vars.example            # Template for .dev.vars
+└── wrangler.toml                # Bot handler worker config
+```
+
+## Setup
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org) 18+
+- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/) — `npm install -g wrangler`
+- [Cloudflare account](https://dash.cloudflare.com/sign-up)
+- [Telegram bot token](https://t.me/BotFather) via @BotFather
+- GitHub Personal Access Token with `repo` and `read:org` scopes
+
+### 1. Clone and Install
+```bash
+git clone https://github.com/Malay-dev/g-issue-notifier.git
+cd g-issue-notifier
+npm install
+```
+
+### 2. Create Cloudflare Resources
+```bash
+wrangler login
+
+wrangler d1 create issuebot-db
+wrangler kv namespace create SESSION
+wrangler kv namespace create CLAIM_CTX
+wrangler queues create issue-notifs
+```
+
+Copy the IDs from each command output into `wrangler.toml`, `src/workers/poller.toml`, and `src/workers/dispatcher.toml`.
+
+### 3. Run Migrations
+```bash
+npm run db:migrate:remote
+```
+
+### 4. Configure Secrets
+
+Copy `.dev.vars.example` to `.dev.vars` and fill in all values:
+```bash
+cp .dev.vars.example .dev.vars
+```
+```ini
+BOT_TOKEN=your_telegram_bot_token
+GH_PAT=your_github_personal_access_token
+WEBHOOK_SECRET=random_secret_string
+ENCRYPTION_KEY=64_char_hex_string
+OWNER_CHAT_ID=your_telegram_chat_id
+OWNER_GH_USER=your_github_username
+OWNER_ID=any_uuid_v4
+MULTI_TENANT=false
+LOG_LEVEL=info
+```
+
+Generate `ENCRYPTION_KEY`:
+```bash
+node -e "const b = new Uint8Array(32); crypto.getRandomValues(b); console.log(Array.from(b).map(x => x.toString(16).padStart(2,'0')).join(''))"
+```
+
+Get your `OWNER_CHAT_ID` by messaging [@userinfobot](https://t.me/userinfobot) on Telegram.
+
+Push secrets to all workers:
+```bash
+npm run secrets:publish
+```
+
+### 5. Deploy
+```bash
+npm run deploy:all
+```
+
+### 6. Register Telegram Webhook
+```bash
+npm run webhook:register
+```
+
+## Available Scripts
+
+| Script | Description |
+|---|---|
+| `npm run deploy:all` | Deploy all three workers |
+| `npm run deploy:bot` | Deploy bot handler only |
+| `npm run deploy:poller` | Deploy poller only |
+| `npm run deploy:dispatcher` | Deploy dispatcher only |
+| `npm run tail:bot` | Live logs for bot handler |
+| `npm run tail:poller` | Live logs for poller |
+| `npm run tail:dispatcher` | Live logs for dispatcher |
+| `npm run db:migrate:remote` | Apply migrations to remote D1 |
+| `npm run db:migrate:local` | Apply migrations to local D1 |
+| `npm run secrets:publish` | Push .dev.vars secrets to all workers |
+| `npm run webhook:register` | Register Telegram webhook |
+| `npm run typecheck` | Run TypeScript type checking |
+
+## Secrets Reference
+
+| Secret | Workers | Description |
+|---|---|---|
+| `BOT_TOKEN` | bot, dispatcher | Telegram bot token from @BotFather |
+| `GH_PAT` | bot, poller, dispatcher | GitHub Personal Access Token |
+| `WEBHOOK_SECRET` | bot, poller, dispatcher | Random string for request validation |
+| `ENCRYPTION_KEY` | bot, poller, dispatcher | 32-byte hex key for AES-GCM PAT encryption |
+| `OWNER_CHAT_ID` | bot, poller, dispatcher | Your Telegram chat ID |
+| `OWNER_GH_USER` | bot, poller, dispatcher | Your GitHub username |
+| `OWNER_ID` | bot, poller, dispatcher | Stable UUID used as your user_id in D1 |
+
+## Multi-Tenant Mode
+
+The system is designed for single-user mode by default but is schema-ready for multiple users.
+
+To enable multi-tenant mode, flip the flag in all three worker toml files:
+```toml
+[vars]
+MULTI_TENANT = "true"
+```
+
+In multi-tenant mode:
+- Users are registered in the `users` table on `/start`
+- Each user's PAT is encrypted with AES-GCM before storage in D1
+- The `ENCRYPTION_KEY` secret is the only key that can decrypt PATs
+
+## Secret Rotation
+
+| Secret | How to rotate |
+|---|---|
+| `BOT_TOKEN` | @BotFather → `/mybots` → your bot → Revoke token → re-run `secrets:publish` + `webhook:register` |
+| `GH_PAT` | GitHub → Settings → Tokens → delete old → generate new → re-run `secrets:publish` |
+| `WEBHOOK_SECRET` | Generate new hex string → re-run `secrets:publish` |
+| `ENCRYPTION_KEY` | Generate new key → re-encrypt all PATs in D1 → re-run `secrets:publish` |
+
+## License
+
+MIT
