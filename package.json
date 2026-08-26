@@ -42,7 +42,9 @@
     "webhook:register:sh": "bash scripts/register-webhook.sh",
     "webhook:verify": "node ./scripts/run-script.js verify-webhook",
     "webhook:verify:win": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/verify-webhook.ps1",
-    "webhook:verify:sh": "bash scripts/verify-webhook.sh"
+    "webhook:verify:sh": "bash scripts/verify-webhook.sh",
+    "subs:status:win": "powershell -File scripts/check-subscriptions.ps1",
+    "subs:status:sh": "bash scripts/check-subscriptions.sh"
   },
   "license": "ISC"
 }
