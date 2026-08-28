@@ -1,5 +1,5 @@
 # g-issue-notifier
-
+ 
 A serverless Telegram bot that monitors GitHub repositories for new issues and delivers instant notifications with a one-tap claim flow — built entirely on Cloudflare Workers, D1, Queues, and KV.
 
 ## How It Works
